@@ -4,3 +4,4 @@
 __pycache__/
 *.pyc
 results_exp1.json
+EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json

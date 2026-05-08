@@ -177,7 +177,6 @@ ONeRec baseline/newONe/
 ├── planner_prompt.py
 ├── qwen_local_feedback.py
 ├── runtime_utils.py
-├── EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json
 └── README.md
 ```
 
@@ -256,7 +255,6 @@ python main.py
 
 ## Reproducibility Notes
 
-- The frozen experiment configuration is stored in EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json.
 - The experiment runner writes detailed outputs to a local JSON file during execution.
 - Fairness checks are performed to ensure identical sessions, histories, candidate sets, and targets across methods.
 
