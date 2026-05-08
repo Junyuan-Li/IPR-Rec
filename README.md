@@ -2,20 +2,18 @@
 
 ## Overview
 
-This project is built upon the multi-round target-oriented recommendation framework ONeRec and proposes a constrained planning enhancement framework for improving target-oriented recommendation progression and interaction quality.
+This repository contains an ONeRec-based research prototype for target-oriented multi-round recommendation with constrained LLM planning.
 
-Unlike the original heuristic policy in ONeRec, the proposed framework introduces:
+The core idea is not to let the LLM fully replace the recommender backbone. Instead, the framework uses the LLM as a constrained planning module that works together with local guard, reranking, and rescue mechanisms.
+
+Compared with the original heuristic ONeRec-style policy, this implementation adds:
 
 - fine-grained dynamic intention tracking,
-- constrained LLM-guided target-aware path reasoning,
-- reflective multi-round interaction evolution.
+- target-aware constrained path reasoning,
+- backbone-first candidate selection,
+- reject-aware reflection and rerouting.
 
-The framework aims to preserve the ranking capability of the original backbone while improving:
-
-- long-term target progression,
-- trajectory rationality,
-- user acceptability,
-- adaptive multi-round interaction.
+The goal is to improve target progression and final target exposure quality without sacrificing recommendation stability.
 
 ## Motivation
 
@@ -107,6 +105,14 @@ Reflection & Re-routing
 Evaluation
 ```
 
+## Methods In EXP1
+
+The main controlled experiment compares three methods under identical user sessions, identical history inputs, identical candidate sets, and identical target items.
+
+- Original Backbone: the ONeRec-style baseline without explicit path planning.
+- Planning-Only Variant: introduces path planning signals without the full local safeguard and rescue pipeline.
+- Ours (LLM + Step3): the full constrained framework with LLM planning, local guard, and rescue logic.
+
 ## Experimental Objectives
 
 The experiments aim to answer the following research questions.
@@ -145,25 +151,42 @@ Ablation components:
 - without reflection,
 - without constrained reranking.
 
-## Current Experimental Findings
+## Current EXP1 Snapshot
 
-Preliminary experiments show that unconstrained free-form planning may damage recommendation ranking performance.
+Current frozen EXP1 results are based on 275 matched evaluation sessions with primary evaluation at round 6.
 
-After introducing:
+### Overall Performance
 
-- confidence gating,
-- constrained reranking,
-- backbone-first recommendation,
-- reject-aware replanning,
+| Method | HR@6 | IOI@6 | IOR@6 | Avg Round |
+| --- | ---: | ---: | ---: | ---: |
+| Original Backbone | 73.4545 | 0.653165 | 31.8436 | 4.2145 |
+| Planning-Only Variant | 49.8182 | 0.471707 | 28.1382 | 4.8073 |
+| Ours (LLM + Step3) | 84.3636 | 0.743152 | 33.9055 | 3.8073 |
 
-the proposed framework begins to achieve:
+### Target Rank Quality
 
-- stronger long-term target progression,
-- higher interaction acceptability,
-- improved target exposure quality,
-- competitive recommendation accuracy.
+| Method | Init Mean Rank | Final Mean Rank | Final Top-10 % |
+| --- | ---: | ---: | ---: |
+| Original Backbone | 50.9673 | 10.9927 | 78.5455 |
+| Planning-Only Variant | 50.9673 | 15.5491 | 64.0000 |
+| Ours (LLM + Step3) | 50.9673 | 7.5236 | 87.6364 |
 
-This suggests that LLM planning should act as a constrained enhancement mechanism rather than fully replacing backbone ranking.
+### Path Behavior
+
+| Method | Avg Path Length | API Success % | Remote % | Guard % | Rescue % |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original Backbone | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| Planning-Only Variant | 4.2545 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| Ours (LLM + Step3) | 2.5872 | 68.5957 | 17.5154 | 51.0802 | 31.4043 |
+
+### Main Finding
+
+The current result supports the following conclusion:
+
+- path planning alone is not sufficient,
+- constrained LLM integration is effective,
+- most gains come from the coordination between remote proposals and local guard or rescue decisions,
+- the full framework improves both target rank quality and interaction efficiency.
 
 ## Project Structure
 
@@ -194,6 +217,33 @@ File-role mapping:
 - exp1_runner.py: EXP1 execution, tables, ablations, and result saving.
 - main.py: full bootstrap entry with dependency checking and embedding diagnostics.
 - native_baseline.py: original backbone baseline implementation.
+
+## Quick Start
+
+### 1. Prepare Data
+
+Place the MIND small dataset under one of the following locations expected by the runtime:
+
+- MINDsmall_train
+- MINDsmall_dev
+
+or pass a custom path with the CLI.
+
+### 2. Configure API Access
+
+- Put the real API key in .env.
+- Keep .env local only.
+- Use .env.example as the public template.
+
+### 3. Install And Run
+
+The runtime can auto-install missing Python packages. Typical dependencies include:
+
+- numpy
+- scikit-learn
+- tqdm
+- sentence-transformers
+- transformers
 
 ## Running Experiments
 
@@ -232,21 +282,27 @@ python main.py
 | AvgRounds | Average interaction rounds |
 | Path Rationality | Semantic transition quality |
 
+## Reproducibility Notes
+
+- The frozen experiment configuration is stored in EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json.
+- The latest saved EXP1 outputs are written to results_exp1.json.
+- The experiment runner performs fairness checks to ensure identical sessions, histories, candidate sets, and targets across methods.
+
 ## Key Insight
 
-The project experimentally shows that:
+This project is centered on constrained enhancement rather than unrestricted LLM replacement.
 
-- fully unconstrained LLM planning may weaken recommendation ranking,
-- constrained planning can preserve backbone effectiveness,
-- reflective rerouting improves long-term target-oriented interaction quality.
+The most important empirical message is:
 
-The framework therefore focuses on constrained target-aware recommendation enhancement rather than unrestricted planner replacement.
+- the LLM should be treated as a planning signal provider,
+- local guard and rescue logic are necessary for stable gains,
+- the strongest performance comes from the full constrained framework, not from path planning in isolation.
 
-## Environment Notes
+## Repository Notes
 
-- Put the real API key in .env and keep it untracked.
-- Use .env.example as the public template.
-- The experiment runner writes outputs to results_exp1.json in the current directory.
+- .env is ignored and should not be pushed.
+- __pycache__ and .pyc files are ignored.
+- This directory is intended to keep experiment code and frozen result artifacts needed for reproduction.
 
 ## Citation
 
