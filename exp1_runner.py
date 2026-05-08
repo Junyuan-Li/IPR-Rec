@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import time
@@ -10,7 +11,16 @@ import numpy as np
 from core import ONeRecBaseline
 from llm_client import validate_llm_configuration
 from native_baseline import NativeONeRecBaseline
-from runtime_utils import convert_to_serializable
+from runtime_utils import (
+    GLOBAL_SEED,
+    configure_stdout_utf8,
+    convert_to_serializable,
+    install_required_packages,
+    print_gpu_info,
+    resolve_data_dir,
+    set_global_seed,
+    validate_data_files,
+)
 
 
 BASELINE_METHOD_NAME = 'Original Backbone'
@@ -727,3 +737,74 @@ def run_exp1_pipeline(script_dir: str, data_loader, news_embeds, embed_type: str
         json.dump(convert_to_serializable(exp1_output), f, indent=2, ensure_ascii=False)
     print(f'\n[OK] EXP1 结果保存到: {output_file}')
     return exp1_output
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Run EXP1 target-aware multi-round recommendation experiment.')
+    parser.add_argument('--sample_size', type=int, default=None, help='Number of users to evaluate.')
+    parser.add_argument('--max_rounds', type=int, default=None, help='Maximum interaction rounds per user.')
+    parser.add_argument('--data_dir', type=str, default=None, help='Optional path to MIND data directory.')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed override.')
+    parser.add_argument('--disable_parallel', action='store_true', help='Disable parallel session execution.')
+    parser.add_argument('--run_internal_ablations', action='store_true', help='Run Ours internal ablations.')
+    parser.add_argument('--run_llm_no_guard', action='store_true', help='Run ablation without LLM guard.')
+    parser.add_argument('--run_llm_no_reflection', action='store_true', help='Run ablation without reflection.')
+    parser.add_argument('--run_llm_no_rescue', action='store_true', help='Run ablation without rescue.')
+    return parser.parse_args()
+
+
+def _build_cli_config(args):
+    config = dict(DEFAULT_EXP1_CONFIG)
+    if args.sample_size is not None:
+        config['SAMPLE_SIZE'] = args.sample_size
+    if args.max_rounds is not None:
+        config['MAX_ROUNDS'] = args.max_rounds
+    if args.seed is not None:
+        config['RANDOM_SEED'] = args.seed
+    if args.disable_parallel:
+        config['EXP1_PARALLEL_EXECUTION'] = False
+    if args.run_internal_ablations:
+        config['RUN_INTERNAL_ABLATIONS'] = True
+        config['RUN_LLM_NO_GUARD'] = True
+        config['RUN_LLM_NO_REFLECTION'] = True
+        config['RUN_LLM_NO_RESCUE'] = True
+    if args.run_llm_no_guard:
+        config['RUN_INTERNAL_ABLATIONS'] = True
+        config['RUN_LLM_NO_GUARD'] = True
+    if args.run_llm_no_reflection:
+        config['RUN_INTERNAL_ABLATIONS'] = True
+        config['RUN_LLM_NO_REFLECTION'] = True
+    if args.run_llm_no_rescue:
+        config['RUN_INTERNAL_ABLATIONS'] = True
+        config['RUN_LLM_NO_RESCUE'] = True
+    return config
+
+
+def main():
+    from data_loader import MINDDataLoader
+    from embeddings import build_news_embeddings
+
+    args = parse_args()
+    configure_stdout_utf8()
+    print('[*] EXP1 CLI 启动...')
+    set_global_seed(GLOBAL_SEED)
+    install_required_packages()
+    print_gpu_info()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = args.data_dir or resolve_data_dir(script_dir)
+    validate_data_files(data_dir)
+
+    print(f'[*] 使用数据目录: {data_dir}')
+    data_loader = MINDDataLoader(data_dir, min_interactions=5, max_history=30)
+    all_items = sorted(data_loader.news.keys())
+    news_embeds, embed_type = build_news_embeddings(data_dir, data_loader, all_items, use_minilm=True)
+
+    config = _build_cli_config(args)
+    set_global_seed(config['RANDOM_SEED'])
+    print(f"[*] 配置: sample_size={config['SAMPLE_SIZE']} max_rounds={config['MAX_ROUNDS']} seed={config['RANDOM_SEED']}")
+    run_exp1_pipeline(script_dir, data_loader, news_embeds, embed_type, config)
+
+
+if __name__ == '__main__':
+    main()
