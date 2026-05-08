@@ -1,0 +1,30 @@
+{
+  "name": "exp1_full_framework_frozen_config",
+  "purpose": "Frozen default configuration for the full framework with Step3 enabled and larger-sample validation.",
+  "sample_size": 300,
+  "random_seed": 42,
+  "impression_size": 120,
+  "k_list": [5, 6],
+  "max_rounds": 6,
+  "lambda0": 0.1,
+  "lambda1": 0.2,
+  "graph_k": 10,
+  "max_path_length": 5,
+  "llm_hybrid_rounds": 2,
+  "llm_candidate_k": 20,
+  "llm_path_k": 5,
+  "llm_target_prior": 0.65,
+  "llm_safe_margin": 0.015,
+  "llm_release_rank": 3,
+  "enable_gating": true,
+  "enable_replanning": true,
+  "enable_reflection": true,
+  "run_baseline": true,
+  "run_greedy_path": true,
+  "run_llm_path": true,
+  "notes": [
+    "Main Idea is treated as the core ablation component of the full framework.",
+    "Ours (LLM + Step3) is the full framework.",
+    "Table 3 should be interpreted with Remote/Guard/Rescue adoption rates together."
+  ]
+}
