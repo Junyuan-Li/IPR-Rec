@@ -151,42 +151,15 @@ Ablation components:
 - without reflection,
 - without constrained reranking.
 
-## Current EXP1 Snapshot
+## Current Status
 
-Current frozen EXP1 results are based on 275 matched evaluation sessions with primary evaluation at round 6.
+The current repository keeps the experiment framework, runtime code, and reproduction entry points public, while detailed local result artifacts are kept outside Git tracking.
 
-### Overall Performance
-
-| Method | HR@6 | IOI@6 | IOR@6 | Avg Round |
-| --- | ---: | ---: | ---: | ---: |
-| Original Backbone | 73.4545 | 0.653165 | 31.8436 | 4.2145 |
-| Planning-Only Variant | 49.8182 | 0.471707 | 28.1382 | 4.8073 |
-| Ours (LLM + Step3) | 84.3636 | 0.743152 | 33.9055 | 3.8073 |
-
-### Target Rank Quality
-
-| Method | Init Mean Rank | Final Mean Rank | Final Top-10 % |
-| --- | ---: | ---: | ---: |
-| Original Backbone | 50.9673 | 10.9927 | 78.5455 |
-| Planning-Only Variant | 50.9673 | 15.5491 | 64.0000 |
-| Ours (LLM + Step3) | 50.9673 | 7.5236 | 87.6364 |
-
-### Path Behavior
-
-| Method | Avg Path Length | API Success % | Remote % | Guard % | Rescue % |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Original Backbone | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| Planning-Only Variant | 4.2545 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| Ours (LLM + Step3) | 2.5872 | 68.5957 | 17.5154 | 51.0802 | 31.4043 |
-
-### Main Finding
-
-The current result supports the following conclusion:
+At a high level, the current implementation supports the following conclusion:
 
 - path planning alone is not sufficient,
-- constrained LLM integration is effective,
-- most gains come from the coordination between remote proposals and local guard or rescue decisions,
-- the full framework improves both target rank quality and interaction efficiency.
+- constrained LLM integration is more stable than unrestricted planner replacement,
+- local guard and rescue mechanisms are important for reliable target-oriented progression.
 
 ## Project Structure
 
@@ -205,7 +178,6 @@ ONeRec baseline/newONe/
 ├── qwen_local_feedback.py
 ├── runtime_utils.py
 ├── EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json
-├── results_exp1.json
 └── README.md
 ```
 
@@ -285,8 +257,8 @@ python main.py
 ## Reproducibility Notes
 
 - The frozen experiment configuration is stored in EXP1_FULL_FRAMEWORK_FROZEN_CONFIG.json.
-- The latest saved EXP1 outputs are written to results_exp1.json.
-- The experiment runner performs fairness checks to ensure identical sessions, histories, candidate sets, and targets across methods.
+- The experiment runner writes detailed outputs to a local JSON file during execution.
+- Fairness checks are performed to ensure identical sessions, histories, candidate sets, and targets across methods.
 
 ## Key Insight
 
