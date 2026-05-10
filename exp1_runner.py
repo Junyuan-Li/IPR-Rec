@@ -104,7 +104,7 @@ def build_eval_sessions(sample_size: int, data_loader, news_embeds, impression_s
 
 
 def run_experiment(planner_mode: str, exp_name: str, eval_sessions: List[dict], config: dict, news_embeds, data_loader, overrides: dict | None = None):
-    print(f'[*] 运行实验: {exp_name}')
+    print(f'运行实验: {exp_name}')
     print(f'    planner_mode: {planner_mode}')
     if overrides:
         print(f'    overrides: {overrides}')
@@ -215,7 +215,7 @@ def run_experiment(planner_mode: str, exp_name: str, eval_sessions: List[dict], 
         if processed_count % progress_interval == 0 or processed_count == len(evaluated_sessions):
             elapsed = time.time() - exp_start_time
             avg_per_user = elapsed / max(processed_count, 1)
-            print(f'  [EXP-HEARTBEAT] {processed_count}/{len(evaluated_sessions)} users elapsed={elapsed:.1f}s avg={avg_per_user:.2f}s/user valid={valid_users}')
+            print(f'  progress {processed_count}/{len(evaluated_sessions)} users elapsed={elapsed:.1f}s avg={avg_per_user:.2f}s/user valid={valid_users}')
         if planner_mode == 'llm_path':
             results['llm_stats']['called'] += system.llm_called
             results['llm_stats']['api_success'] += system.llm_api_success
@@ -599,24 +599,24 @@ def print_exp1_tables(overall_table: List[dict], ranking_table: List[dict], path
     primary_k = _primary_k(config)
     secondary_k = _secondary_k(config)
     print('\n' + '=' * 80)
-    print('[EXP1] Table 1: Smoke Monitoring Metrics')
+    print('EXP1 Table 1: Smoke Monitoring Metrics')
     print('=' * 80)
     print(f"{'Method':<24} {f'HR@{secondary_k}':<10} {f'HR@{primary_k}':<10} {f'IOI@{primary_k}':<12} {f'IOR@{primary_k}':<12} {'Accept%':<10} {'AvgRnd':<10} {'RndStd':<10}")
     for row in overall_table:
         print(f"{row['Method']:<24} {row[f'HR@{secondary_k}']:<10.4f} {row[f'HR@{primary_k}']:<10.4f} {row[f'IOI@{primary_k}']:<12.6f} {row[f'IOR@{primary_k}']:<12.4f} {row['Accept %']:<10.4f} {row['Avg Round']:<10.4f} {row['Round Std']:<10.4f}")
     print('\n' + '=' * 80)
-    print('[EXP1] Table 2: Target Rank Evolution')
+    print('EXP1 Table 2: Target Rank Evolution')
     print('=' * 80)
     print(f"{'Method':<24} {'InitMean':<12} {'FinalMean':<12} {'BestMean':<12} {'FinalTop10%':<12}")
     for row in ranking_table:
         print(f"{row['Method']:<24} {row['Init Mean Rank']:<12.4f} {row['Final Mean Rank']:<12.4f} {row['Best Mean Rank']:<12.4f} {row['Final Top-10 %']:<12.4f}")
     print('\n' + '=' * 80)
-    print('[EXP1] Table 3: Path Behavior Analysis')
+    print('EXP1 Table 3: Path Behavior Analysis')
     print('=' * 80)
     print(f"{'Method':<24} {'AvgLen':<8} {'PathSel%':<10} {'APISucc%':<10} {'Remote%':<10} {'Guard%':<10} {'Rescue%':<10} {'Fallback%':<10} {'Stability':<12}")
     for row in path_table:
         print(f"{row['Method']:<24} {row['Avg Path Length']:<8.4f} {row['Path Selected %']:<10.4f} {row['API Success %']:<10.4f} {row['Remote Adopt %']:<10.4f} {row['Guard Adopt %']:<10.4f} {row['Rescue Adopt %']:<10.4f} {row['Fallback %']:<10.4f} {row['Stability']:<12}")
-    print('\n[EXP1 CHECKS]')
+    print('\nEXP1 checks:')
     for key, value in checks.items():
         print(f'  {key}: {value}')
 
@@ -624,7 +624,7 @@ def print_exp1_tables(overall_table: List[dict], ranking_table: List[dict], path
 def run_exp1_pipeline(script_dir: str, data_loader, news_embeds, embed_type: str, config: dict):
     if config['ENABLE_STEP3'] and config['RUN_LLM_PATH']:
         llm_config_status = validate_llm_configuration()
-        print(f"[*] LLM preflight: backend={llm_config_status['backend']} model={llm_config_status['model']}")
+        print(f"LLM preflight: backend={llm_config_status['backend']} model={llm_config_status['model']}")
         if not llm_config_status['ok']:
             raise RuntimeError(
                 'LLM preflight failed before EXP1 execution. '
@@ -632,14 +632,14 @@ def run_exp1_pipeline(script_dir: str, data_loader, news_embeds, embed_type: str
             )
 
     eval_sessions = build_eval_sessions(config['SAMPLE_SIZE'], data_loader, news_embeds, config['IMPRESSION_SIZE'], config['RANDOM_SEED'])
-    print(f'[*] EXP1 固定评测 sessions: {len(eval_sessions)} 用户')
+    print(f'EXP1 固定评测 sessions: {len(eval_sessions)} 用户')
 
     backbone_results = {}
     greedy_results = {}
     llm_results = None
     llm_ablation_results = {}
 
-    print(f'[*] 开始 EXP1 对照实验 ({len(eval_sessions)} 用户)')
+    print(f'开始 EXP1 对照实验 ({len(eval_sessions)} 用户)')
     if config['RUN_BASELINE']:
         backbone_results = run_experiment('baseline', BASELINE_METHOD_NAME, eval_sessions, config, news_embeds, data_loader)
     if config['RUN_GREEDY_PATH']:
@@ -735,7 +735,7 @@ def run_exp1_pipeline(script_dir: str, data_loader, news_embeds, embed_type: str
     }
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(convert_to_serializable(exp1_output), f, indent=2, ensure_ascii=False)
-    print(f'\n[OK] EXP1 结果保存到: {output_file}')
+    print(f'\nEXP1 结果保存到: {output_file}')
     return exp1_output
 
 
@@ -786,7 +786,7 @@ def main():
 
     args = parse_args()
     configure_stdout_utf8()
-    print('[*] EXP1 CLI 启动...')
+    print('EXP1 CLI 启动...')
     set_global_seed(GLOBAL_SEED)
     install_required_packages()
     print_gpu_info()
@@ -795,14 +795,14 @@ def main():
     data_dir = args.data_dir or resolve_data_dir(script_dir)
     validate_data_files(data_dir)
 
-    print(f'[*] 使用数据目录: {data_dir}')
+    print(f'使用数据目录: {data_dir}')
     data_loader = MINDDataLoader(data_dir, min_interactions=5, max_history=30)
     all_items = sorted(data_loader.news.keys())
     news_embeds, embed_type = build_news_embeddings(data_dir, data_loader, all_items, use_minilm=True)
 
     config = _build_cli_config(args)
     set_global_seed(config['RANDOM_SEED'])
-    print(f"[*] 配置: sample_size={config['SAMPLE_SIZE']} max_rounds={config['MAX_ROUNDS']} seed={config['RANDOM_SEED']}")
+    print(f"配置: sample_size={config['SAMPLE_SIZE']} max_rounds={config['MAX_ROUNDS']} seed={config['RANDOM_SEED']}")
     run_exp1_pipeline(script_dir, data_loader, news_embeds, embed_type, config)
 
 

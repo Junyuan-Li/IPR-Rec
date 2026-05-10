@@ -94,7 +94,7 @@ class ONeRecBaseline:
         if self.use_path_planner:
             self.item_graph = self._build_item_graph()
             if self.debug:
-                print(f'  [PATH] 构建item图: {len(self.item_graph)}个节点, K={self.graph_k}')
+                print(f'  path graph ready: {len(self.item_graph)} nodes, K={self.graph_k}')
 
         vecs = [self.news[i] for i in self.history if i in self.news]
         if vecs:
@@ -756,7 +756,7 @@ class ONeRecBaseline:
     def _llm_plan_path(self, user_vec: np.ndarray, target_id: str, reflection: Optional[str] = None) -> List[str]:
         self.llm_called += 1
         if self.debug:
-            print(f'  [LLM CALLED] planner activated call={self.llm_called} target={target_id}')
+            print(f'  llm planner activated: call={self.llm_called}, target={target_id}')
         candidate_items = self._build_llm_candidates(user_vec, target_id)
         candidate_paths = self._build_diverse_llm_paths(user_vec, target_id, candidate_items, reflection=reflection, path_count=3)
         user_profile = self._build_user_profile()
@@ -768,7 +768,7 @@ class ONeRecBaseline:
             response = self._get_planner_llm().plan_path(prompt)
             self.llm_api_success += 1
             if self.debug:
-                print(f'  [LLM RAW RESPONSE] {response}')
+                print(f'  llm raw response: {response}')
             parsed_bundle = self._parse_path_candidates(response, candidate_items, target_id)
             remote_paths = list(parsed_bundle.get('candidate_paths', [])) if 'parsed_bundle' in locals() else []
         except Exception as exc:
@@ -784,7 +784,7 @@ class ONeRecBaseline:
                 return rescue_path
             self.llm_fallback += 1
             if self.debug:
-                print(f'  [LLM FALLBACK] api call failed, fallback to greedy. error={error_message}')
+                print(f'  llm fallback to greedy: {error_message}')
             return self._plan_path(user_vec, target_id)
         self.last_llm_reason = str(parsed_bundle.get('reason', '')).strip()
         self.last_llm_stage = 'soft_bias'
@@ -935,15 +935,6 @@ class ONeRecBaseline:
         target_score = float(np.dot(base_user, self.news[target_id]))
         return int(sum(score > target_score for score in scores) + 1)
 
-    def _diag_separability(self, target: str):
-        target_vec = self.news[target]
-        i_vals = np.array([self._sigmoid(np.dot(self.user, self.news[i])) for i in self.impressions])
-        g_vals = np.array([self._sigmoid(np.dot(target_vec, self._normalize(self.news[i] - self.user))) for i in self.impressions])
-        scores = np.array([self._score(i, target) for i in self.impressions])
-        print(f'  [DIAG] i_val  {np.mean(i_vals):.3f} [{np.min(i_vals):.3f},{np.max(i_vals):.3f}]  ← 期望 0.4–0.7')
-        print(f'  [DIAG] g_val  {np.mean(g_vals):.3f} [{np.min(g_vals):.3f},{np.max(g_vals):.3f}]  ← 期望 0.1–0.3')
-        print(f'  [DIAG] score var={np.var(scores):.5f}  ← 期望 ≥0.001')
-
     def run(self, max_rounds: int = 20) -> list:
         if not self.impressions:
             return []
@@ -1031,12 +1022,3 @@ class ONeRecBaseline:
                 'path_step': round_idx + 1 if self.use_path_planner else None,
             })
         return trajectory
-
-
-def debug_single_user(news_embeds, data_loader, all_items, user_id=None, max_rounds=5):
-    if user_id is None:
-        user_id = sorted(data_loader.users.keys())[0]
-    ud = data_loader.users[user_id]
-    impressions = data_loader.build_click_biased_impressions(user_id, all_items, size=50)
-    sys_obj = ONeRecBaseline(news_embeds, data_loader.news, data_loader.news_titles, ud['history'], impressions, debug=True)
-    return sys_obj.run(max_rounds=max_rounds)

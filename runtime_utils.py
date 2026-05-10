@@ -68,28 +68,28 @@ def install_required_packages() -> None:
     if not missing_packages:
         return
 
-    print(f'[*] 检测到缺失的包: {", ".join(missing_packages)}')
-    print('[*] 正在自动安装（适配 Colab 环境）...\n')
+    print(f'检测到缺失的包: {", ".join(missing_packages)}')
+    print('正在自动安装（适配 Colab 环境）...\n')
     for package in missing_packages:
         print(f'  > pip install {package}')
         try:
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', package])
         except subprocess.CalledProcessError:
-            print(f'    [!] 安装 {package} 失败，尝试不带 -q 参数重新安装')
+            print(f'    安装 {package} 失败，尝试不带 -q 参数重新安装')
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
-    print('\n[OK] 依赖包安装完成\n')
+    print('\n依赖包安装完成\n')
 
 
 def print_gpu_info() -> None:
     try:
         import torch
 
-        print(f'[OK] GPU可用: {torch.cuda.is_available()}')
+        print(f'GPU 可用: {torch.cuda.is_available()}')
         if torch.cuda.is_available():
             print(f'     GPU: {torch.cuda.get_device_name(0)}')
             print(f'     内存: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB')
     except ImportError:
-        print('[!] PyTorch 未安装，将使用 CPU')
+        print('PyTorch 未安装，将使用 CPU')
 
 
 def resolve_data_dir(script_dir: str) -> str:
