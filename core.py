@@ -90,19 +90,22 @@ class ONeRecBaseline:
             'target_weight': 1.0,
             'history_weight': 1.0,
         }
+        self.temporal_decay = 0.35
+        self.user_update_eta = 0.20
+        self.temporal_state_mix = 0.55
+        self.intent_graph_summary_k = 3
+        self.current_target_id = None
+        self.current_graph_nodes = []
         self.impressions = [i for i in impressions if i in news_embeds]
+        base_graph_nodes = list(dict.fromkeys(self.history + self.impressions))
+        self.item_graph = {}
+        self.current_graph_nodes = base_graph_nodes
         if self.use_path_planner:
-            self.item_graph = self._build_item_graph()
+            self.item_graph = self._build_item_graph(base_graph_nodes)
             if self.debug:
                 print(f'  path graph ready: {len(self.item_graph)} nodes, K={self.graph_k}')
 
-        vecs = [self.news[i] for i in self.history if i in self.news]
-        if vecs:
-            user_vec = np.mean(vecs, axis=0)
-            self.user = user_vec / (np.linalg.norm(user_vec) + 1e-8)
-        else:
-            dim = next(iter(self.news.values())).shape[0]
-            self.user = np.zeros(dim)
+        self.user = self._compute_temporal_user_state(self.history)
 
         self.lambda0 = 0.1
         self.lambda1 = 0.2
@@ -132,9 +135,43 @@ class ONeRecBaseline:
         category = self.cat.get(item_id, '')
         return f'{item_id} | {title} | {category}' if category else f'{item_id} | {title}'
 
+    def _valid_item_ids(self, item_ids: Optional[List[str]] = None) -> List[str]:
+        source_ids = self.history if item_ids is None else item_ids
+        return [item_id for item_id in source_ids if item_id in self.news]
+
+    def _temporal_attention_weights(self, item_ids: List[str]) -> np.ndarray:
+        valid_item_ids = self._valid_item_ids(item_ids)
+        if not valid_item_ids:
+            return np.array([], dtype=np.float32)
+        history_length = len(valid_item_ids)
+        positions = np.arange(history_length - 1, -1, -1, dtype=np.float32)
+        weights = np.exp(-self.temporal_decay * positions)
+        weights_sum = float(np.sum(weights))
+        if weights_sum <= 0.0:
+            return np.full(history_length, 1.0 / history_length, dtype=np.float32)
+        return (weights / weights_sum).astype(np.float32)
+
+    def _compute_temporal_user_state(self, history_ids: Optional[List[str]] = None) -> np.ndarray:
+        valid_history = self._valid_item_ids(history_ids)
+        if not valid_history:
+            dim = next(iter(self.news.values())).shape[0]
+            return np.zeros(dim, dtype=np.float32)
+        weights = self._temporal_attention_weights(valid_history)
+        history_matrix = np.stack([self.news[item_id] for item_id in valid_history], axis=0)
+        weighted_state = np.sum(history_matrix * weights[:, None], axis=0)
+        return self._normalize(weighted_state)
+
     def _build_user_profile(self) -> str:
         recent_items = self.history[-5:]
-        recent_text = '; '.join(self._item_text(item_id) for item_id in recent_items) if recent_items else 'N/A'
+        recent_weights = self._temporal_attention_weights(recent_items)
+        if recent_items and len(recent_weights) == len([item_id for item_id in recent_items if item_id in self.news]):
+            valid_recent_items = [item_id for item_id in recent_items if item_id in self.news]
+            recent_text = '; '.join(
+                f'{self._item_text(item_id)} (w={weight:.2f})'
+                for item_id, weight in zip(valid_recent_items, recent_weights)
+            )
+        else:
+            recent_text = '; '.join(self._item_text(item_id) for item_id in recent_items) if recent_items else 'N/A'
         category_counts = defaultdict(int)
         for item_id in self.history:
             category_counts[self.cat.get(item_id, 'unknown')] += 1
@@ -168,7 +205,7 @@ class ONeRecBaseline:
     def _compute_openness_fine_grained(self, item_id: str) -> float:
         item_vec = self.news[item_id]
         hist_vecs = [self.news[i] for i in self.history if i in self.news]
-        user_centroid = np.mean(hist_vecs, axis=0) if hist_vecs else self.user
+        user_centroid = self._compute_temporal_user_state(self.history) if hist_vecs else self.user
         if len(hist_vecs) >= 2:
             shifts = []
             for idx in range(len(hist_vecs) - 1):
@@ -181,14 +218,14 @@ class ONeRecBaseline:
         alpha = self._sigmoid(self.alpha_w1 * intent_shift + self.alpha_w2 * float(semantic_distance))
         return float(np.clip(alpha, self.alpha_min, self.alpha_max))
 
-    def _build_item_graph(self) -> Dict[str, List[str]]:
+    def _build_item_graph(self, node_ids: Optional[List[str]] = None) -> Dict[str, List[str]]:
+        graph_nodes = node_ids if node_ids is not None else self.impressions
+        unique_nodes = [item_id for item_id in dict.fromkeys(graph_nodes) if item_id in self.news]
         graph = {}
-        for item_id in self.impressions:
-            if item_id not in self.news:
-                continue
+        for item_id in unique_nodes:
             item_vec = self.news[item_id]
             similarities = []
-            for other_id in self.impressions:
+            for other_id in unique_nodes:
                 if other_id != item_id and other_id in self.news:
                     other_vec = self.news[other_id]
                     sim = float(cosine_similarity([item_vec], [other_vec])[0][0])
@@ -197,7 +234,72 @@ class ONeRecBaseline:
             graph[item_id] = [neighbor_id for neighbor_id, _ in similarities[:self.graph_k]]
         return graph
 
+    def _refresh_intention_graph(self, target_id: Optional[str] = None, candidate_items: Optional[List[str]] = None) -> Dict[str, List[str]]:
+        candidate_pool = list(candidate_items) if candidate_items is not None else list(self.impressions)
+        graph_nodes = list(dict.fromkeys(self.history + candidate_pool + ([target_id] if target_id and target_id in self.news else [])))
+        self.current_target_id = target_id
+        self.current_graph_nodes = graph_nodes
+        self.item_graph = self._build_item_graph(graph_nodes)
+        return self.item_graph
+
+    def _build_graph_topology_summary(self, target_id: str, candidate_items: Optional[List[str]] = None) -> str:
+        if not self.item_graph:
+            self._refresh_intention_graph(target_id, candidate_items)
+        anchor_nodes = list(dict.fromkeys(self.history[-2:] + (list(candidate_items)[:3] if candidate_items else []) + [target_id]))
+        summary_lines = []
+        for item_id in anchor_nodes:
+            if item_id not in self.item_graph:
+                continue
+            neighbors = self.item_graph.get(item_id, [])[:self.intent_graph_summary_k]
+            if neighbors:
+                summary_lines.append(f'- {item_id} -> {", ".join(neighbors)}')
+        return '\n'.join(summary_lines) if summary_lines else '- topology unavailable'
+
+    def _path_structure_metrics(self, path: List[str], target_id: str, user_vec: Optional[np.ndarray] = None) -> Dict[str, float]:
+        if not path or target_id not in self.news:
+            return {
+                'semantic_coherence': 0.0,
+                'target_proximity': 0.0,
+                'history_consistency': 0.0,
+                'mean_progress': 0.0,
+                'monotonic_violations': 0.0,
+            }
+        anchor_user = self.user if user_vec is None else user_vec
+        path_pairs = list(zip(path[:-1], path[1:]))
+        pair_sims = [self._cosine(self.news[left], self.news[right]) for left, right in path_pairs if left in self.news and right in self.news]
+        semantic_coherence = float(np.mean(pair_sims)) if pair_sims else 1.0
+        final_step_id = path[-2] if len(path) >= 2 else path[-1]
+        target_proximity = self._cosine(self.news[final_step_id], self.news[target_id]) if final_step_id in self.news else 0.0
+        target_sims = self._path_target_sims(path, target_id)
+        progress_deltas = [target_sims[idx + 1] - target_sims[idx] for idx in range(len(target_sims) - 1)]
+        history_consistency = float(np.mean([
+            self._cosine(self.news[item_id], anchor_user)
+            for item_id in path if item_id in self.news
+        ])) if path else 0.0
+        return {
+            'semantic_coherence': semantic_coherence,
+            'target_proximity': target_proximity,
+            'history_consistency': history_consistency,
+            'mean_progress': float(np.mean([max(delta, 0.0) for delta in progress_deltas])) if progress_deltas else 0.0,
+            'monotonic_violations': float(sum(1 for delta in progress_deltas if delta <= self.path_min_progress)),
+        }
+
+    def _format_candidate_paths(self, candidate_paths: List[List[str]], target_id: str) -> str:
+        if not candidate_paths:
+            return '1. ' + target_id
+        formatted_lines = []
+        for idx, path in enumerate(candidate_paths):
+            metrics = self._path_structure_metrics(path, target_id)
+            formatted_lines.append(
+                f'{idx + 1}. ' + ' -> '.join(path)
+                + f' | coherence={metrics["semantic_coherence"]:.3f}'
+                + f' | target_proximity={metrics["target_proximity"]:.3f}'
+                + f' | history_consistency={metrics["history_consistency"]:.3f}'
+            )
+        return '\n'.join(formatted_lines)
+
     def _plan_path(self, user_vec: np.ndarray, target_id: str) -> List[str]:
+        self._refresh_intention_graph(target_id, list(self.impressions))
         if target_id not in self.news or not hasattr(self, 'item_graph'):
             return [target_id]
         start_candidates = []
@@ -287,7 +389,7 @@ class ONeRecBaseline:
         target_id: str,
         candidate_items: List[str],
         candidate_paths: List[List[str]],
-        reflection: Optional[str] = None,
+        reflection: Optional[dict] = None,
     ) -> str:
         history_titles = '\n'.join(f'- {self._item_text(item_id)}' for item_id in history_ids[-10:]) or '- N/A'
         if isinstance(reflection, dict):
@@ -296,18 +398,22 @@ class ONeRecBaseline:
             failure_reason = reflection.get('reason_guess', 'unknown')
             rec_sim = float(reflection.get('rec_sim', 0.0))
             target_sim = float(reflection.get('target_sim', 0.0))
+            reflection_triplet_text = (
+                f'(state_deviation={float(reflection.get("state_deviation", 0.0)):.4f}, '
+                f'target_contribution={float(reflection.get("target_contribution", 0.0)):.4f}, '
+                f'feedback_label={int(reflection.get("feedback_label", 0))})'
+            )
         else:
             last_action = 'none'
             outcome = 'none'
             failure_reason = 'none'
             rec_sim = 0.0
             target_sim = 0.0
+            reflection_triplet_text = 'none'
         failed_path_lines = '\n'.join(' -> '.join(path) for path in self.failed_paths[-5:]) or 'none'
-        candidate_path_lines = '\n'.join(
-            f'{idx + 1}. ' + ' -> '.join(path)
-            for idx, path in enumerate(candidate_paths)
-        ) or '1. ' + target_id
+        candidate_path_lines = self._format_candidate_paths(candidate_paths, target_id)
         candidate_item_lines = '\n'.join(f'- {self._item_text(item_id)}' for item_id in candidate_items) or '- N/A'
+        graph_topology_text = self._build_graph_topology_summary(target_id, candidate_items)
         return build_target_oriented_planner_prompt(
             history_titles=history_titles,
             user_profile=user_profile,
@@ -324,6 +430,8 @@ class ONeRecBaseline:
             reject_streak=self.reject_streak,
             failed_path_lines=failed_path_lines,
             candidate_path_lines=candidate_path_lines,
+            graph_topology_text=graph_topology_text,
+            reflection_triplet_text=reflection_triplet_text,
             target_id=target_id,
         )
 
@@ -419,6 +527,7 @@ class ONeRecBaseline:
         visited = {start_id}
         current = start_id
         target_vec = self.news[target_id]
+        history_anchor = self._compute_temporal_user_state(self.history)
         current_weights = dict(self.policy_bias)
         preferences = self._get_reflection_preferences(reflection)
         current_weights['history_weight'] += preferences['prefer_history']
@@ -440,7 +549,7 @@ class ONeRecBaseline:
             for neighbor in neighbors:
                 neighbor_vec = self.news[neighbor]
                 target_sim = self._cosine(neighbor_vec, target_vec)
-                history_sim = self._cosine(neighbor_vec, self.user)
+                history_sim = self._cosine(neighbor_vec, history_anchor)
                 bridge_sim = self._cosine(self.news[current], neighbor_vec)
                 noise = float(self.rng.normal(0, 0.015))
                 base_score = self._score(neighbor, target_id)
@@ -530,32 +639,28 @@ class ONeRecBaseline:
     def _score_path(self, path: List[str], user_vec: np.ndarray, target_vec: np.ndarray, alpha: float) -> float:
         if not path:
             return float('-inf')
-        scores = []
-        target_sims = []
         for item_id in path:
             if item_id not in self.news:
                 return float('-inf')
-            item_vec = self.news[item_id]
-            sim_user = self._cosine(user_vec, item_vec)
-            sim_target = self._cosine(item_vec, target_vec)
-            target_sims.append(sim_target)
-            scores.append(alpha * sim_user + (1 - alpha) * sim_target)
-        path_score = float(np.mean(scores))
+        target_id = path[-1]
+        metrics = self._path_structure_metrics(path, target_id, user_vec=user_vec)
+        path_score = (
+            0.35 * metrics['semantic_coherence']
+            + alpha * metrics['history_consistency']
+            + (1 - alpha) * metrics['target_proximity']
+        )
         final_step_id = path[-2] if len(path) >= 2 else path[-1]
         final_sim = self._cosine(self.news[final_step_id], target_vec)
-        progress_deltas = [target_sims[idx + 1] - target_sims[idx] for idx in range(len(target_sims) - 1)]
-        monotonic_violations = sum(1 for delta in progress_deltas if delta <= self.path_min_progress)
-        mean_progress = float(np.mean([max(delta, 0.0) for delta in progress_deltas])) if progress_deltas else 0.0
         first_step_bonus = 0.0
         if path and path[0] != path[-1]:
             first_step_bonus = self.path_first_step_weight * self._score(path[0], path[-1])
         return (
             path_score
             + (1 - alpha) * final_sim
-            + self.path_progress_weight * mean_progress
+            + self.path_progress_weight * metrics['mean_progress']
             + first_step_bonus
             - self.path_length_penalty * max(len(path) - 1, 0)
-            - self.path_monotonic_penalty * monotonic_violations
+            - self.path_monotonic_penalty * metrics['monotonic_violations']
         )
 
     def _parse_path(self, response: str, candidate_items: Optional[List[str]] = None, target_id: Optional[str] = None) -> List[str]:
@@ -682,9 +787,12 @@ class ONeRecBaseline:
                 return False
         return True
 
-    def _self_reflect(self, rec: str, target_id: str, accept: bool) -> dict:
-        target_sim = self._target_similarity(target_id)
-        rec_sim = float(np.dot(self.user, self.news[rec]))
+    def _self_reflect(self, rec: str, target_id: str, accept: bool, previous_user_vec: Optional[np.ndarray] = None) -> dict:
+        base_user = self.user if previous_user_vec is None else previous_user_vec
+        target_sim_before = self._target_similarity(target_id, base_user)
+        target_sim_after = self._target_similarity(target_id)
+        rec_sim = float(np.dot(base_user, self.news[rec]))
+        target_sim = target_sim_after
         reason_guess = 'aligned'
         if not accept:
             if target_sim - rec_sim > 0.12:
@@ -693,6 +801,8 @@ class ONeRecBaseline:
                 reason_guess = 'low_similarity'
             else:
                 reason_guess = 'wrong_topic'
+        state_deviation = float(max(0.0, 1.0 - rec_sim))
+        target_contribution = float(target_sim_after - target_sim_before)
         reflection = {
             'last_action': rec,
             'outcome': 'accept' if accept else 'reject',
@@ -700,6 +810,10 @@ class ONeRecBaseline:
             'target_gap': float(target_sim - rec_sim),
             'rec_sim': rec_sim,
             'target_sim': target_sim,
+            'state_deviation': state_deviation,
+            'target_contribution': target_contribution,
+            'feedback_label': 1 if accept else 0,
+            'reflection_triplet': (state_deviation, target_contribution, 1 if accept else 0),
         }
         self._update_policy(reflection)
         return reflection
@@ -753,11 +867,12 @@ class ONeRecBaseline:
             return max(sanitized_paths, key=lambda path: self._score_path(path, user_vec, target_vec, alpha=0.45))
         return []
 
-    def _llm_plan_path(self, user_vec: np.ndarray, target_id: str, reflection: Optional[str] = None) -> List[str]:
+    def _llm_plan_path(self, user_vec: np.ndarray, target_id: str, reflection: Optional[dict] = None) -> List[str]:
         self.llm_called += 1
         if self.debug:
             print(f'  llm planner activated: call={self.llm_called}, target={target_id}')
         candidate_items = self._build_llm_candidates(user_vec, target_id)
+        self._refresh_intention_graph(target_id, candidate_items)
         candidate_paths = self._build_diverse_llm_paths(user_vec, target_id, candidate_items, reflection=reflection, path_count=3)
         user_profile = self._build_user_profile()
         prompt = self._build_llm_prompt(user_profile, self.history, target_id, candidate_items, candidate_paths, reflection)
@@ -905,14 +1020,9 @@ class ONeRecBaseline:
 
     def _update_user(self, item_id: str):
         vec = self.news[item_id]
-        diffs = []
-        for i in range(len(self.history) - 1):
-            a, b = self.history[i], self.history[i + 1]
-            if a in self.news and b in self.news:
-                sim = cosine_similarity([self.news[a]], [self.news[b]])[0][0]
-                diffs.append(1.0 - sim)
-        omega = float(np.clip(np.mean(diffs), 0.1, 0.5)) if diffs else 0.1
-        self.user = (1 - omega) * self.user + omega * vec
+        temporal_state = self._compute_temporal_user_state(self.history + [item_id])
+        self.user = (1 - self.user_update_eta) * self.user + self.user_update_eta * vec
+        self.user = (1 - self.temporal_state_mix) * self.user + self.temporal_state_mix * temporal_state
         self.user = self.user / (np.linalg.norm(self.user) + 1e-8)
 
     def _state_transition(self, item_id: str, feedback: bool) -> str:
@@ -948,6 +1058,7 @@ class ONeRecBaseline:
             planned_path = self._llm_plan_path(self.user.copy(), target) if self.use_llm_planner else self._plan_path(self.user.copy(), target)
         trajectory = []
         for round_idx in range(max_rounds):
+            pre_action_user = self.user.copy()
             if self.use_path_planner and planned_path:
                 if self._should_release_target(target, round_idx, planned_path, path_cursor):
                     rec = target
@@ -997,7 +1108,7 @@ class ONeRecBaseline:
             if accept:
                 self.reject_streak = 0
                 if self.use_path_planner and not success and self.enable_replanning:
-                    reflection = self._self_reflect(rec, target, accept=True) if self.use_llm_planner and self.enable_reflection else None
+                    reflection = self._self_reflect(rec, target, accept=True, previous_user_vec=pre_action_user) if self.use_llm_planner and self.enable_reflection else None
                     planned_path = self._llm_plan_path(self.user.copy(), target, reflection=reflection) if self.use_llm_planner else self._plan_path(self.user.copy(), target)
                     path_cursor = 0
             if (not accept) and self.use_path_planner and not self.use_llm_planner and not success and self.enable_replanning:
@@ -1007,7 +1118,7 @@ class ONeRecBaseline:
                 self.reject_streak += 1
                 self._remember_failed_path(planned_path)
                 if self.enable_replanning:
-                    reflection = self._self_reflect(rec, target, accept=False) if self.enable_reflection else None
+                    reflection = self._self_reflect(rec, target, accept=False, previous_user_vec=pre_action_user) if self.enable_reflection else None
                     planned_path = self._llm_plan_path(self.user.copy(), target, reflection=reflection)
                     path_cursor = 0
             trajectory.append({

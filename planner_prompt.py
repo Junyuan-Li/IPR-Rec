@@ -56,6 +56,8 @@ def build_target_oriented_planner_prompt(
     reject_streak: int,
     failed_path_lines: str,
     candidate_path_lines: str,
+    graph_topology_text: str,
+    reflection_triplet_text: str,
     target_id: str,
 ) -> str:
     reflection_rules = build_reflection_rules(reflection, has_failed_paths=failed_path_lines != 'none')
@@ -85,10 +87,14 @@ def build_target_oriented_planner_prompt(
         f'{target_text}\n\n'
         '[Candidate Items]\n'
         f'{candidate_item_lines}\n\n'
+        '[Intent Graph Topology]\n'
+        f'{graph_topology_text}\n\n'
         '[Last Interaction]\n'
         f'Action: {last_action}\n'
         f'Outcome: {outcome}\n\n'
         f'Reason: {failure_reason}\n\n'
+        '[Reflection Signal]\n'
+        f'{reflection_triplet_text}\n\n'
         '[Current Strategy Weights]\n'
         f'target_weight: {policy_bias["target_weight"]:.2f}\n'
         f'history_weight: {policy_bias["history_weight"]:.2f}\n'
