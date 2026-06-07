@@ -3,7 +3,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from runtime_utils import stable_seed_from_text
+from utils.runtime_utils import stable_seed_from_text
 
 
 class MINDDataLoader:

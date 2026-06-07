@@ -257,7 +257,7 @@ def get_planner_engine(backend: str = None):
     if selected_backend in {'dashscope', 'api', 'remote'}:
         return DashScopePlannerEngine()
     if selected_backend == 'local':
-        from qwen_local_feedback import get_feedback_engine
+        from llm.qwen_local_feedback import get_feedback_engine
 
         return get_feedback_engine()
     raise ValueError(f'Unsupported ONEREC_LLM_BACKEND: {selected_backend}')

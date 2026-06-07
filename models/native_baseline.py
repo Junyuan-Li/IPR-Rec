@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from runtime_utils import stable_seed_from_text
+from utils.runtime_utils import stable_seed_from_text
 
 
 class NativeONeRecBaseline:

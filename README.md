@@ -167,27 +167,32 @@ Current implementation layout:
 
 ```text
 ONeRec baseline/newONe/
-├── core.py
-├── data_loader.py
-├── embeddings.py
-├── exp1_runner.py
-├── llm_client.py
+├── data/
+│   ├── data_loader.py
+│   └── embeddings.py
+├── experiments/
+│   └── exp1_runner.py
+├── llm/
+│   ├── llm_client.py
+│   ├── planner_prompt.py
+│   └── qwen_local_feedback.py
 ├── main.py
-├── native_baseline.py
-├── planner_prompt.py
-├── qwen_local_feedback.py
-├── runtime_utils.py
+├── models/
+│   ├── core.py
+│   └── native_baseline.py
+├── utils/
+│   └── runtime_utils.py
 └── README.md
 ```
 
 File-role mapping:
 
-- core.py: constrained target-aware multi-round recommendation core loop.
-- planner_prompt.py: planner and reflection prompt construction.
-- llm_client.py: LLM backend loading, env parsing, and preflight validation.
-- exp1_runner.py: EXP1 execution, tables, ablations, and result saving.
+- models/core.py: constrained target-aware multi-round recommendation core loop.
+- llm/planner_prompt.py: planner and reflection prompt construction.
+- llm/llm_client.py: LLM backend loading, env parsing, and preflight validation.
+- experiments/exp1_runner.py: EXP1 execution, tables, ablations, and result saving.
 - main.py: full bootstrap entry with dependency checking and embedding diagnostics.
-- native_baseline.py: original backbone baseline implementation.
+- models/native_baseline.py: original backbone baseline implementation.
 
 ## Quick Start
 

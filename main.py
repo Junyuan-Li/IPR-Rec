@@ -3,10 +3,10 @@
 
 import os
 
-from data_loader import MINDDataLoader
-from embeddings import build_news_embeddings, diagnose_embedding_quality
-from exp1_runner import DEFAULT_EXP1_CONFIG, run_exp1_pipeline
-from runtime_utils import (
+from data.data_loader import MINDDataLoader
+from data.embeddings import build_news_embeddings, diagnose_embedding_quality
+from experiments.exp1_runner import DEFAULT_EXP1_CONFIG, run_exp1_pipeline
+from utils.runtime_utils import (
     GLOBAL_SEED,
     configure_stdout_utf8,
     install_required_packages,

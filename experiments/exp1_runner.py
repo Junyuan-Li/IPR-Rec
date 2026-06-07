@@ -8,10 +8,10 @@ from typing import List
 
 import numpy as np
 
-from core import ONeRecBaseline
-from llm_client import validate_llm_configuration
-from native_baseline import NativeONeRecBaseline
-from runtime_utils import (
+from llm.llm_client import validate_llm_configuration
+from models.core import ONeRecBaseline
+from models.native_baseline import NativeONeRecBaseline
+from utils.runtime_utils import (
     GLOBAL_SEED,
     configure_stdout_utf8,
     convert_to_serializable,
@@ -781,8 +781,8 @@ def _build_cli_config(args):
 
 
 def main():
-    from data_loader import MINDDataLoader
-    from embeddings import build_news_embeddings
+    from data.data_loader import MINDDataLoader
+    from data.embeddings import build_news_embeddings
 
     args = parse_args()
     configure_stdout_utf8()
